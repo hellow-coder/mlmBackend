@@ -4,7 +4,8 @@ const UserModel = require("../models/user.Model");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { getPlacementPosition } = require("../utils/getPlacementPosition");
-
+const distributeDailyROI = require("../cron/dailyRoiJob");
+const DirectReferralModel = require("../models/directReferralIncome.model")
 
 
 
@@ -89,13 +90,23 @@ module.exports.userRegister = async (req, res) => {
     await newUser.save();
 
     
-    // const token = jwt.sign(
-    //   { id: newUser._id, email },
-    //   process.env.JWT_SECRET,
-    //   { expiresIn: "7d" }
-    // );
+ 
 
    
+     if (newUser?.parentId) {
+      const parent = await UserModel.findById(newUser.parentId).lean();
+      newUser.level = parent.level + 1; // next level
+
+      if (newUser.level > 5) {
+        newUser.level = 5; // cap at level 5
+      }
+    } else {
+      newUser.level = 1; // first user or root
+    }
+
+    await newUser.save();
+
+
     return res.status(201).json({
       success: true,
       message: "Registration successful",
@@ -194,8 +205,12 @@ module.exports.login = async (req, res) => {
 
 
 module.exports.getDirectUser = async (req, res) => {
+ 
   try {
-    const { id } = req.body;
+    
+    const id = req.user._id;
+    
+  //  console.log(id ,"fdfkfd")
 
     if (!id) {
       return res.status(400).json({ success: false, message: "User ID is required" });
@@ -218,3 +233,99 @@ module.exports.getDirectUser = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
+
+// module.exports.getProfile = async (req, res) => {
+//   try {
+//     const id = req.user._id
+//     const { userName } = req.body;
+
+//     if (!userName || typeof userName !== "string") {
+//       return res.status(400).json({ success: false, message: "Username required" });
+//     }
+
+
+//     const user = await UserModel.findOne({ username: userName.toLowerCase() })
+//       .select("_id username name referralCode email position createdAt"); 
+
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Profile fetched successfully",
+//       data: user,
+//     });
+
+//   } catch (error) {
+//     console.error("Get Profile Error:", error);
+//     return res.status(500).json({ success: false, message: "Internal Server Error" });
+//   }
+// };
+
+
+
+module.exports.getProfile = async (req, res) => {
+  try {
+    const userId = req.user?._id;  // 👈 Logged-in user's id from JWT
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized user" });
+    }
+
+    const user = await UserModel.findById(userId)
+      .select("-passwordHash ");
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile fetched successfully",
+      data: user,
+    });
+
+  } catch (error) {
+    console.error("Get Profile Error:", error);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+
+
+module.exports.directreferralIncomeHistory = async (req, res) => {
+  try {
+    const userId = req.user._id; // jis user ki history dekhni hai
+
+    const history = await DirectReferralModel.find({ userId })
+      .populate("fromUserId", "name email username phone") // jisne invest kiya
+      .populate("investmentId", "amount planType createdAt") // jis investment se income mili
+      .sort({ createdAt: -1 }); // latest sabse upar
+
+    if (!history || history.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No referral income found.",
+        history: [],
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      historyCount: history.length,
+      history,
+    });
+
+  } catch (error) {
+    console.error("Referral History Error:", error);
+    return res.status(500).json({ message: "Something went wrong." });
+  }
+};
+
+
+
+module.exports.getRoi = async (req,res)=>{
+   await distributeDailyROI();
+  res.send("ROI processed successfully");
+}

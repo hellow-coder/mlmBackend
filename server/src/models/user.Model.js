@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema(
       unique: true,
       required: true,
     },
+    level: {
+  type: Number,
+  default: 1,  
+},
+
 
     email: {
       type: String,
@@ -97,8 +102,8 @@ const userSchema = new mongoose.Schema(
 );
 
 
-userSchema.index({ sponsorId: 1 });
-userSchema.index({ referralCode: 1 });
+// userSchema.index({ sponsorId: 1 });
+// userSchema.index({ referralCode: 1 });
 
 const UserModel = mongoose.model("UserModel", userSchema);
 module.exports = UserModel;

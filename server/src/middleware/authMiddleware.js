@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const UserModel = require("../models/user.Model");
+const Admin = require("../models/admin.Model")
 
 
 
@@ -37,22 +38,24 @@ module.exports.isAdmin = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
-    // No token?
+    
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ success: false, message: "No token provided" });
     }
 
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Attach user to request
+ 
+    console.log(decoded)
+   
     req.user = decoded;
 
     // Check if user exists and is admin
-    const user = await User.findById(req.user._id).select("role name email");
+    const user = await Admin.findById(req.user.adminId).select("role name email");
+    console.log(user)
 
     if (!user) {
-      return res.status(401).json({ success: false, message: "User not found" });
+      return res.status(401).json({ success: false, message: "Admin not found" });
     }
 
     if (user.role !== "admin") {

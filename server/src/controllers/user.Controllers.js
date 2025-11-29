@@ -1,33 +1,43 @@
-
-const { generateReferralCode, generateUsername } = require("../utils/randomGenrate");
+const {
+  generateReferralCode,
+  generateUsername,
+} = require("../utils/randomGenrate");
 const UserModel = require("../models/user.Model");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { getPlacementPosition } = require("../utils/getPlacementPosition");
 const distributeDailyROI = require("../cron/dailyRoiJob");
-const DirectReferralModel = require("../models/directReferralIncome.model")
-
-
+const DirectReferralModel = require("../models/directReferralIncome.model");
+const cloudinary = require("cloudinary").v2;
+const TicketModel = require("../models/ticketRaise.model");
+const uploadToCloudinary = require("../config/cloudinary");
 
 module.exports.userRegister = async (req, res) => {
   // console.log(req.body)
   try {
     const { phone, email, password, sponsorCode } = req.body;
 
-   
     if (!phone || !email || !password) {
-      return res.status(400).json({ success: false, message: "All fields are required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "All fields are required" });
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ success: false, message: "Invalid email format" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email format" });
     }
 
     if (await UserModel.findOne({ email })) {
-      return res.status(400).json({ success: false, message: "Email already exists" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email already exists" });
     }
     if (await UserModel.findOne({ phone })) {
-      return res.status(400).json({ success: false, message: "Phone number already used" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Phone number already used" });
     }
 
     let sponsorId = null;
@@ -35,65 +45,58 @@ module.exports.userRegister = async (req, res) => {
 
     const totalUsers = await UserModel.countDocuments();
 
- 
     if (totalUsers > 0) {
       if (!sponsorCode) {
-        return res.status(400).json({ success: false, message: "Sponsor Code is required" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Sponsor Code is required" });
       }
 
-      
       const sponsor = await UserModel.findOne({
         referralCode: sponsorCode.trim().toUpperCase(),
       });
 
       if (!sponsor) {
-        return res.status(400).json({ success: false, message: "Invalid Sponsor Code" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid Sponsor Code" });
       }
 
-      sponsorId = sponsor._id; 
+      sponsorId = sponsor._id;
 
-   
       placementInfo = await getPlacementPosition(sponsorId);
     }
 
-    
     const hashedPassword = await bcrypt.hash(password, 10);
 
-   
     const newUser = await UserModel.create({
       phone,
       email: email.toLowerCase(),
       passwordHash: hashedPassword,
-      sponsorId, 
+      sponsorId,
     });
 
     newUser.referralCode = await generateReferralCode(newUser._id);
     newUser.username = generateUsername();
 
-    
     if (sponsorId) {
       await UserModel.findByIdAndUpdate(sponsorId, {
         $push: { referredUsers: newUser._id },
       });
     }
 
- 
     if (placementInfo) {
       await UserModel.findByIdAndUpdate(placementInfo.parentId, {
         $set: { [placementInfo.position]: newUser._id },
       });
 
-      newUser.position = placementInfo.position; 
-      newUser.parentId = placementInfo.parentId; 
+      newUser.position = placementInfo.position;
+      newUser.parentId = placementInfo.parentId;
     }
 
     await newUser.save();
 
-    
- 
-
-   
-     if (newUser?.parentId) {
+    if (newUser?.parentId) {
       const parent = await UserModel.findById(newUser.parentId).lean();
       newUser.level = parent.level + 1; // next level
 
@@ -106,7 +109,6 @@ module.exports.userRegister = async (req, res) => {
 
     await newUser.save();
 
-
     return res.status(201).json({
       success: true,
       message: "Registration successful",
@@ -118,33 +120,31 @@ module.exports.userRegister = async (req, res) => {
         username: newUser.username,
         referralCode: newUser.referralCode,
         sponsorId: newUser.sponsorId, // who referred
-        parentId: newUser.parentId,   // where placed
-        position: newUser.position,   // left/right
+        parentId: newUser.parentId, // where placed
+        position: newUser.position, // left/right
       },
     });
-
   } catch (error) {
     console.error("Registration Error:", error);
     return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 
-
-
-
 module.exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Email and password are required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password are required" });
     }
-
 
     const user = await UserModel.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(400).json({ success: false, message: "Invalid email or password" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or password" });
     }
 
     // 🚨 Blocked or disabled account
@@ -165,10 +165,11 @@ module.exports.login = async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(400).json({ success: false, message: "Invalid email or password" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or password" });
     }
 
-   
     const token = jwt.sign(
       {
         id: user._id,
@@ -179,7 +180,6 @@ module.exports.login = async (req, res) => {
       { expiresIn: "7d" }
     );
 
- 
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -196,35 +196,37 @@ module.exports.login = async (req, res) => {
         position: user.position,
       },
     });
-
   } catch (error) {
     console.error("Login Error:", error);
     return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 
-
 module.exports.getDirectUser = async (req, res) => {
- 
   try {
-    
     const id = req.user._id;
-    
-  //  console.log(id ,"fdfkfd")
+
+    //  console.log(id ,"fdfkfd")
 
     if (!id) {
-      return res.status(400).json({ success: false, message: "User ID is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
     }
 
     const user = await UserModel.findById(id)
-      .select("referredUsers").populate({
+      .select("referredUsers")
+      .populate({
         path: "referredUsers",
-        select: "_id username phone position totalInvestment totalEarnings email referralCode createdAt",
+        select:
+          "_id username phone position totalInvestment totalEarnings email referralCode createdAt",
       })
       .lean();
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     res.status(200).json({ success: true, data: user });
@@ -243,9 +245,8 @@ module.exports.getDirectUser = async (req, res) => {
 //       return res.status(400).json({ success: false, message: "Username required" });
 //     }
 
-
 //     const user = await UserModel.findOne({ username: userName.toLowerCase() })
-//       .select("_id username name referralCode email position createdAt"); 
+//       .select("_id username name referralCode email position createdAt");
 
 //     if (!user) {
 //       return res.status(404).json({ success: false, message: "User not found" });
@@ -263,21 +264,22 @@ module.exports.getDirectUser = async (req, res) => {
 //   }
 // };
 
-
-
 module.exports.getProfile = async (req, res) => {
   try {
-    const userId = req.user?._id;  // 👈 Logged-in user's id from JWT
+    const userId = req.user?._id; // 👈 Logged-in user's id from JWT
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Unauthorized user" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized user" });
     }
 
-    const user = await UserModel.findById(userId)
-      .select("-passwordHash ");
+    const user = await UserModel.findById(userId).select("-passwordHash ");
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     return res.status(200).json({
@@ -285,14 +287,13 @@ module.exports.getProfile = async (req, res) => {
       message: "Profile fetched successfully",
       data: user,
     });
-
   } catch (error) {
     console.error("Get Profile Error:", error);
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal Server Error" });
   }
 };
-
-
 
 module.exports.directreferralIncomeHistory = async (req, res) => {
   try {
@@ -316,16 +317,215 @@ module.exports.directreferralIncomeHistory = async (req, res) => {
       historyCount: history.length,
       history,
     });
-
   } catch (error) {
     console.error("Referral History Error:", error);
     return res.status(500).json({ message: "Something went wrong." });
   }
 };
 
-
-
-module.exports.getRoi = async (req,res)=>{
-   await distributeDailyROI();
+module.exports.getRoi = async (req, res) => {
+  await distributeDailyROI();
   res.send("ROI processed successfully");
+};
+
+// ===================================================================================>
+module.exports.getLevelUsers = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // Get all level users (up to 10 levels)
+    const levelData = await getAllLevelUsers(userId);
+
+    res.json({
+      success: true,
+      userId,
+      totalLevels: levelData.totalLevels,
+      totalUsers: levelData.totalUsers,
+      levels: levelData.levels,
+    });
+  } catch (error) {
+    console.error("❌ Error in getLevelUsers:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching level users",
+      error: error.message,
+    });
+  }
+};
+
+// Helper function to get all levels
+async function getAllLevelUsers(userId, maxLevels = 5) {
+  const levels = [];
+  let currentLevelUsers = [userId];
+  let totalUsers = 0;
+
+  for (let level = 1; level <= maxLevels; level++) {
+    if (currentLevelUsers.length === 0) break;
+
+    // Get next level users (referredBy current level)
+    const nextLevelUsers = await UserModel.find({
+      referredBy: { $in: currentLevelUsers },
+    })
+      .select(
+        "_id name email mobile phone level totalEarnings totalInvestment referredBy createdAt"
+      )
+      .lean();
+
+    if (nextLevelUsers.length === 0) break;
+
+    levels.push({
+      level: level,
+      count: nextLevelUsers.length,
+      users: nextLevelUsers,
+    });
+
+    totalUsers += nextLevelUsers.length;
+    currentLevelUsers = nextLevelUsers.map((u) => u._id);
+  }
+
+  return {
+    totalLevels: levels.length,
+    totalUsers: totalUsers,
+    levels: levels,
+  };
 }
+
+// ==========================================================================================>
+
+module.exports.raiseTicket = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { subject, description } = req.body;
+
+    // Validation
+    if (!subject || !description) {
+      return res.status(400).json({
+        success: false,
+        message: "Subject and description are required",
+      });
+    }
+
+    // Handle file uploads
+    let attachments = [];
+    if (req.files && req.files.length > 0) {
+      // Maximum 5 files
+      if (req.files.length > 5) {
+        return res.status(400).json({
+          success: false,
+          message: "Maximum 5 files allowed",
+        });
+      }
+
+      // Upload each file to Cloudinary
+      const uploadPromises = req.files.map((file) => uploadToCloudinary(file));
+
+      try {
+        attachments = await Promise.all(uploadPromises);
+      } catch (uploadError) {
+        return res.status(400).json({
+          success: false,
+          message: uploadError.message,
+        });
+      }
+    }
+
+    // Create ticket
+    const ticket = new TicketModel({
+      userId,
+      subject,
+      description,
+      attachments,
+    });
+
+    await ticket.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Ticket raised successfully",
+      ticket: {
+        id: ticket._id,
+        subject: ticket.subject,
+        description: ticket.description,
+        status: ticket.status,
+        attachments: ticket.attachments,
+        createdAt: ticket.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in raiseTicket:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error raising ticket",
+      error: error.message,
+    });
+  }
+};
+
+module.exports.getRaiseTicketHistory = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const tickets = await TicketModel.find({ userId })
+      .sort({ createdAt: -1 }) // Latest first
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      ticketCount: tickets.length,
+      tickets,
+    });
+  } catch (error) {
+    console.error("❌ Error in getRaiseTicketHistory:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching ticket history",
+      error: error.message,
+    });
+  }
+};
+
+module.exports.deleteRaiseTicket = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    const { ticketId } = req.params;
+
+    if (!userId || !ticketId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID and Ticket ID are required",
+      });
+    }
+
+    // Check if ticket belongs to user
+    const ticket = await TicketModel.findOne({ _id: ticketId, userId });
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: "Ticket not found or unauthorized",
+      });
+    }
+
+    // Delete ticket
+    await TicketModel.deleteOne({ _id: ticketId });
+
+    return res.status(200).json({
+      success: true,
+      message: "Ticket deleted successfully",
+    });
+
+  } catch (error) {
+    console.error("❌ Error in deleteRaiseTicket:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting ticket",
+    });
+  }
+};
+

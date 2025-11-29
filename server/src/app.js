@@ -8,11 +8,12 @@ const adminRouter = require("../src/routes/admin.Routes");
 const distributeDailyROI = require("./cron/dailyRoiJob");
 
 app.use(cors({
-  origin: ["http://localhost:3005", "https://yourfrontend.com"],
+  origin: ["http://localhost:3005", "https://yourfrontend.com","http://192.168.1.17:3005"],
   credentials: true
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 

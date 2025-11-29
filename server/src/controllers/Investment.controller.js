@@ -3,8 +3,8 @@ const { distributeReferralCommission } = require("../services/referralService")
 const User = require("../models/user.Model");
 const directReferralIncomeModel = require("../models/directReferralIncome.model");
 const levelIncomeModel = require("../models/LevelIncomeHistory.model")
-
-
+const mongoose = require("mongoose");
+const RoiHistory = require("../models/RoiHistory.model");
 
 module.exports.createInvestment = async (req, res) => {
   try {
@@ -91,7 +91,7 @@ let referralBonus
 
   } catch (error) {
     console.error("Investment Error:", error);
-    return res.status(500).json({ message: "Internal Server Error" });
+    return res.status(500).json({ message: "Internal Server Error" },error);
   }
 };
 
@@ -147,3 +147,62 @@ module.exports.levelIncomeHistory = async (req, res) => {
   }
 };
 
+
+
+module.exports.roiHistory = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    let { investmentId } = req.params;
+
+    console.log("Raw Investment ID from params:", investmentId);
+    console.log("Type:", typeof investmentId);
+
+    // Build query
+    const query = { userId };
+
+    if (investmentId && 
+        investmentId !== 'null' && 
+        investmentId !== 'undefined' && 
+        investmentId.trim() !== '') {
+      
+     
+      if (!mongoose.Types.ObjectId.isValid(investmentId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid investment ID format"
+        });
+      }
+      
+     
+      query.investmentId = investmentId;
+      console.log("✅ Valid Investment ID added to query");
+    } else {
+      console.log("ℹ️ No valid Investment ID - fetching all history");
+    }
+
+    console.log("Final Query:", query);
+
+   
+    const history = await RoiHistory.find(query)
+      .populate("investmentId", "planName amount totalDays dailyRate status")
+      .sort({ distributionDate: -1 });
+
+    console.log("Records found:", history.length);
+
+    res.json({
+      success: true,
+      count: history.length,
+      filter: (investmentId && investmentId !== 'null' && investmentId !== 'undefined') ? "specific" : "all",
+      investmentId: (investmentId && investmentId !== 'null' && investmentId !== 'undefined') ? investmentId : null,
+      data: history,
+    });
+
+  } catch (error) {
+    console.error("❌ Error in roiHistory:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching ROI history",
+      error: error.message,
+    });
+  }
+};

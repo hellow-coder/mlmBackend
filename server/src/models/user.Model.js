@@ -80,6 +80,10 @@ const userSchema = new mongoose.Schema(
 
     investments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Investment" }],
     totalInvestment: { type: Number, default: 0 },
+    mainWallet: {
+  type: mongoose.Schema.Types.Decimal128,
+  default: 0.0
+},
 
     // Security & access control
     twoFASecret: { type: String },
@@ -101,9 +105,6 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-
-// userSchema.index({ sponsorId: 1 });
-// userSchema.index({ referralCode: 1 });
 
 const UserModel = mongoose.model("UserModel", userSchema);
 module.exports = UserModel;
